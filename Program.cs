@@ -19,8 +19,13 @@ namespace TestEmailEngineValidator
         static async Task Main(string[] args)
         {
             DateTime DropDate = new DateTime(2022, 7, 23);
+            int BatchID = 0;
+            ValidateBatches(DropDate, false);
+            //await ValidatePending();
+            //await ValidateBatchesPowerMTAOnly(BatchID);
             //ValidateBatches(DropDate, true);
-            await ValidatePendingPowerMTAOnly();
+            //await ValidateWeek(DropDate);
+            //await ValidatePendingPowerMTAOnly();
             //int ValidationSource_ID = 0;//0=Today'sEmails ,1=EmailValidation1,2=Batch PowerMTAOnly, 3=Realtime Emails,10=EmailValidation1 PowerMTAOnly
             //DateTime DropDate = DateTime.Now;
             //int BatchID = 0;
@@ -226,18 +231,17 @@ namespace TestEmailEngineValidator
             {
                 try
                 {
-                    var procParams = new
-                    {
-                        address = email.ToLower(),
-                        isDisposableAddress = Validation.results.is_disposable,
-                        isRoleAddress = Validation.results.is_role,
-                        reason = Validation.results.reason ?? "",
-                        result = Validation.results.result ?? "",
-                        DeliveryConfidence = Validation.results.delivery_confidence,
-                        did_you_mean = Validation.results.did_you_mean ?? ""
-                    };
-
-                    batches.ExecuteSql("EmailValidation_SaveV2", procParams, commandTimeout: 180);
+                    batches.ExecuteSql("EXEC EmailValidation_SaveV2 @address, @isDisposableAddress, @isRoleAddress, @reason, @result, @DeliveryConfidence, @did_you_mean",
+                        new
+                        {
+                            address = email.ToLower(),
+                            isDisposableAddress = Validation.results.is_disposable,
+                            isRoleAddress = Validation.results.is_role,
+                            reason = Validation.results.reason ?? "",
+                            result = Validation.results.result ?? "",
+                            DeliveryConfidence = Validation.results.delivery_confidence,
+                            did_you_mean = Validation.results.did_you_mean ?? ""
+                        }, commandTimeout: 180);
                 }
                 catch (Exception e)
                 {
@@ -365,7 +369,7 @@ namespace TestEmailEngineValidator
                 {
                     using (IDbConnection EmailValidation = new SqlConnection(connectionString))
                     {
-                        EmailValidation.ExecuteSql("EmailValidation_SaveV2",
+                        EmailValidation.ExecuteSql("EmailValidation_SaveV2 @address, @isDisposableAddress, @isRoleAddress, @reason, @result, @DeliveryConfidence, @did_you_mean",
                         new
                         {
                             address = email.ToLower(),
