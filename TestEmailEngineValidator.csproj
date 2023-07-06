@@ -8,9 +8,9 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Dapper" Version="2.0.143" />
     <PackageReference Include="EASendMail" Version="7.9.1.8" />
     <PackageReference Include="Insight.Database.Core" Version="6.3.11" />
+    <PackageReference Include="Insight.Database.Providers.MsSqlClient" Version="6.3.11" />
     <PackageReference Include="Microsoft.Data.SqlClient" Version="5.1.1" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
     <PackageReference Include="RestSharp" Version="110.2.0" />

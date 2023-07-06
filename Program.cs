@@ -18,99 +18,98 @@ namespace TestEmailEngineValidator
     {
         static async Task Main(string[] args)
         {
-            DateTime DropDate = new DateTime(2022, 7, 23);
+            int ValidationSource_ID = 0;//0=Today'sEmails ,1=EmailValidation1,2=Batch PowerMTAOnly, 3=Realtime Emails,10=EmailValidation1 PowerMTAOnly
+            DateTime DropDate = DateTime.Now;
             int BatchID = 0;
-            ValidateBatches(DropDate, false);
-            //await ValidatePending();
-            //await ValidateBatchesPowerMTAOnly(BatchID);
-            //ValidateBatches(DropDate, true);
-            //await ValidateWeek(DropDate);
-            //await ValidatePendingPowerMTAOnly();
-            //int ValidationSource_ID = 0;//0=Today'sEmails ,1=EmailValidation1,2=Batch PowerMTAOnly, 3=Realtime Emails,10=EmailValidation1 PowerMTAOnly
-            //DateTime DropDate = DateTime.Now;
-            //int BatchID = 0;
-            //if (args.Length > 0) int.TryParse(args[0], out ValidationSource_ID);
-            //if (args.Length > 1 && (ValidationSource_ID == 0 || ValidationSource_ID == 3 || ValidationSource_ID == 4)) DateTime.TryParse(args[1], out DropDate);
-            //if (args.Length > 1 && (ValidationSource_ID == 2)) int.TryParse(args[1], out BatchID);
-            //
-            //switch (ValidationSource_ID)
-            //{
-            //    case 0:
-            //        ValidateBatches(DropDate, false);
-            //        break;
-            //
-            //    case 1:
-            //        await ValidatePending();
-            //        break;
-            //
-            //    case 2:
-            //        await ValidateBatchesPowerMTAOnly(BatchID);
-            //        break;
-            //
-            //    case 3:
-            //        ValidateBatches(DropDate, true);
-            //        break;
-            //
-            //    case 4:
-            //        await ValidateWeek(DropDate);
-            //        break;
-            //
-            //    case 10:
-            //        await ValidatePendingPowerMTAOnly();
-            //        break;
-            //
-            //    default:
-            //        ValidateBatches(DropDate, false);
-            //        break;
-            //}
-            //if (!(new[] { 2, 3 }.Contains(ValidationSource_ID)))
-            //{
-            //    string connectionString = ConfigurationManager.ConnectionStrings["DataCenterEmailEngine"].ConnectionString;
-            //
-            //    using (var cleanup = new SqlConnection(connectionString))
-            //    {
-            //       
-            //        cleanup.ExecuteSql("EXEC EmailValidationCleanUp_GetV2");
-            //    }
-            //}
+            if (args.Length > 0) int.TryParse(args[0], out ValidationSource_ID);
+            if (args.Length > 1 && (ValidationSource_ID == 0 || ValidationSource_ID == 3 || ValidationSource_ID == 4)) DateTime.TryParse(args[1], out DropDate);
+            if (args.Length > 1 && (ValidationSource_ID == 2)) int.TryParse(args[1], out BatchID);
+            
+            switch (ValidationSource_ID)
+            {
+                case 0:
+                    await ValidateBatches(DropDate, false);
+                    break;
+            
+                case 1:
+                    await ValidatePending();
+                    break;
+            
+                case 2:
+                    await ValidateBatchesPowerMTAOnly(BatchID);
+                    break;
+            
+                case 3:
+                    await ValidateBatches(DropDate, true);
+                    break;
+            
+                case 4:
+                    await ValidateWeek(DropDate);
+                    break;
+            
+                case 10:
+                    await ValidatePendingPowerMTAOnly();
+                    break;
+            
+                default:
+                    await ValidateBatches(DropDate, false);
+                    break;
+            }
+            if (!(new[] { 2, 3 }.Contains(ValidationSource_ID)))
+            {
+                string connectionString = ConfigurationManager.ConnectionStrings["DataCenterEmailEngine"].ConnectionString;
+            
+                using (var cleanup = new SqlConnection(connectionString))
+                {
+                   
+                    cleanup.ExecuteSql("EXEC EmailValidationCleanUp_GetV2");
+                }
+            }
         }
 
-        public static void ValidateBatches(DateTime DropDate, bool Realtime)
+        public static async Task ValidateBatches(DateTime DropDate, bool Realtime)
         {
             string connectionString = ConfigurationManager.ConnectionStrings["DataCenterEmailEngine"].ConnectionString;
 
             using (var connection = new SqlConnection(connectionString))
             {
-                IEnumerable<int> Batches = connection.QuerySql<int>("EXEC EmailBatches_GetForValidation @DropDate, @Realtime",
-                            new {DropDate = DropDate, Realtime = Realtime }).ToList();
+                IEnumerable<int> Batches = connection.Query<int>("EmailBatches_GetForValidation",
+                    new { DropDate = DropDate, Realtime = Realtime },
+                    commandType: CommandType.StoredProcedure).ToList();
 
                 foreach (int batch in Batches)
                 {
-                    connection.ExecuteSql("EmailBatchValidationStart_Save @EmailBatch_ID", new { EmailBatch_ID = batch });
+                    connection.Execute("EmailBatchValidationStart_Save", 
+                        new { EmailBatch_ID = batch },
+                        commandType: CommandType.StoredProcedure);
 
-                    List<Emails> ValEmails = connection.QuerySql<Emails>("EXEC EmailValidation_GetByBatch @EmailBatch_ID", new { EmailBatch_ID = batch }).ToList();
+                    IEnumerable<Emails> ValEmails = connection.Query<Emails>("EmailValidation_GetByBatch",
+                        new { EmailBatch_ID = batch },
+                        commandType: CommandType.StoredProcedure);
 
-                    Parallel.ForEach(ValEmails, email =>
+                    Parallel.ForEach(ValEmails, async email =>
                     {
                         if (new[] { 0, 7 }.Contains(email.EmailServiceProvider_ID))
                         {
-                            ValidateWithEASendPowerMTA(email.EmailAddress);
+                            await ValidateWithEASendPowerMTA(email.EmailAddress);
                         }
                         if (new[] { 2 }.Contains(email.EmailServiceProvider_ID))
                         {
-                            ValidateWithPowerMTA(email.EmailAddress);
+                            await ValidateWithPowerMTA(email.EmailAddress);
                         }
+                        Console.WriteLine(email.EmailServiceProvider_ID);
                     });
 
                     foreach (Emails email in ValEmails)
                     {
                         if (new[] { 1, 3, 4, 5, 8, 9 }.Contains(email.EmailServiceProvider_ID))
                         {
-                            ValidateWithEASendPowerMTA(email.EmailAddress);
+                            await ValidateWithEASendPowerMTA(email.EmailAddress);
                         }
                     }
 
-                    connection.ExecuteSql("EmailBatchValidationFinished_Save @EmailBatch_ID", new { EmailBatch_ID = batch });
+                    connection.Execute("EmailBatchValidationFinished_Save", new { EmailBatch_ID = batch },
+                        commandType: CommandType.StoredProcedure);
                 }
             }
         }
@@ -121,26 +120,32 @@ namespace TestEmailEngineValidator
 
             using (var batches = new SqlConnection(connectionString))
             {
-                IEnumerable<Emails> ValEmails = await batches.QuerySqlAsync<Emails>("EmailValidationPending_GetV2");
-                Parallel.ForEach(ValEmails, email =>
+                IEnumerable<Emails> ValEmails = await batches.QueryAsync<Emails>("EmailValidationPending_GetV2",
+                    commandType: CommandType.StoredProcedure);
+
+                Parallel.ForEach(ValEmails, async email =>
                 {
                     if (new[] { 0, 7 }.Contains(email.EmailServiceProvider_ID))
                     {
-                        ValidateWithEASendPowerMTA(email.EmailAddress);
+                        await ValidateWithEASendPowerMTA(email.EmailAddress);
                     }
                     if (new[] { 2 }.Contains(email.EmailServiceProvider_ID))
                     {
-                        ValidateWithPowerMTA(email.EmailAddress);
+                        await ValidateWithPowerMTA(email.EmailAddress);
                     }
+                    Console.WriteLine(email.EmailServiceProvider_ID);
                 });
-                ValEmails = await batches.QuerySqlAsync<Emails>("EmailValidationPending_GetV2");
+
+                ValEmails = await batches.QueryAsync<Emails>("EmailValidationPending_GetV2",
+                    commandType: CommandType.StoredProcedure);
                 foreach (Emails email in ValEmails)
                 {
                     if (new[] { 1, 3, 4, 5, 8, 9 }.Contains(email.EmailServiceProvider_ID))
                     {
-                        ValidateWithEASendPowerMTA(email.EmailAddress);
+                        await ValidateWithEASendPowerMTA(email.EmailAddress);
                     }
                 }
+
             }
         }
 
@@ -150,13 +155,20 @@ namespace TestEmailEngineValidator
 
             using (IDbConnection batches = new SqlConnection(connectionString))
             {
-                var ValBatches = await batches.QuerySqlAsync<WeeklyBatchModel>("EXEC EmailValidationNextWeek_GetV2 @Date", new { Date = DropDate });
+                //batches.Open();
 
-                foreach (var email in ValBatches)
+                var ValBatches = await batches.QueryAsync<WeeklyBatchModel>("EmailValidationNextWeek_GetV2",
+                    new { Date = DropDate },
+                    commandType: CommandType.StoredProcedure);
+
+                var tasks = ValBatches.Select(async email =>
                 {
                     Console.WriteLine("Batch: " + email.EmailBatch_ID + " Date: " + email.EmailDropDate.ToShortDateString());
                     await ValidateBatchesPowerMTAOnly(email.EmailBatch_ID);
-                };
+                });
+
+                await Task.WhenAll(tasks);
+                //batches.Close();
             }
         }
 
@@ -166,10 +178,11 @@ namespace TestEmailEngineValidator
 
             using (IDbConnection batches = new SqlConnection(connectionString))
             {
-                IEnumerable<Emails> ValEmails = await batches.QuerySqlAsync<Emails>("EXEC EmailValidationPending_GetPMTAOnly");
+                IEnumerable<Emails> ValEmails = await batches.QueryAsync<Emails>("EmailValidationPending_GetPMTAOnly",
+                    commandType: CommandType.StoredProcedure);
 
                 // Using a semaphore to limit concurrent tasks
-                SemaphoreSlim semaphore = new SemaphoreSlim(400);
+                SemaphoreSlim semaphore = new SemaphoreSlim(20);
 
                 var tasks = ValEmails.Select(async email =>
                 {
@@ -184,6 +197,7 @@ namespace TestEmailEngineValidator
                         semaphore.Release();
                     }
                 });
+                Console.WriteLine("done");
 
                 // Wait all tasks to complete
                 await Task.WhenAll(tasks);
@@ -197,31 +211,44 @@ namespace TestEmailEngineValidator
 
             using (IDbConnection batch = new SqlConnection(connectionString))
             {
-                var procParams = new { EmailBatch_ID = BatchID };
+                //batch.Open();
 
-                await batch.ExecuteSqlAsync("EmailBatchValidationStart_Save", procParams, commandTimeout: 9000);
+                await batch.ExecuteAsync("EmailBatchValidationStart_Save", 
+                    new { EmailBatch_ID = BatchID },
+                    commandType: CommandType.StoredProcedure);
 
-                List<Emails> ValEmails = (await batch.QuerySqlAsync<Emails>("EmailValidation_GetByBatch", procParams)).ToList();
+                IEnumerable<Emails> ValEmails = await batch.QueryAsync<Emails>("EmailValidation_GetByBatch",
+                    new { EmailBatch_ID = BatchID },
+                    commandType: CommandType.StoredProcedure);
 
                 var tasks = ValEmails.Select(email => Task.Run(() => ValidateWithPowerMTA(email.EmailAddress))).ToList();
 
                 await Task.WhenAll(tasks);
 
-                await batch.ExecuteSqlAsync("EmailBatchValidationFinished_Save", procParams);
+                await batch.ExecuteAsync("EmailBatchValidationFinished_Save", 
+                    new { EmailBatch_ID = BatchID }, 
+                    commandType: CommandType.StoredProcedure);
+
+                //batch.Close();
             }
         }
 
-        public static int ValidateWithPowerMTA(string email)
+        public static async Task<int> ValidateWithPowerMTA(string email)
         {
-            var client = new RestClient("https://api.sparkpost.com/api/v1/recipient-validation/single/" + email);
-            var request = new RestRequest()
+
+            var options = new RestClientOptions()
+            {
+                //Authenticator = new HttpBasicAuthenticator("api", EngineSetting.OutboundPP),
+                BaseUrl = new Uri("https://api.sparkpost.com/api/v1/recipient-validation/single/" + Uri.EscapeDataString(email)),
+                MaxTimeout = 1800000000
+            };
+            RestClient client = new RestClient(options);
+            RestRequest request = new RestRequest()
             {
                 Method = Method.Get
             };
-            //client.Timeout = -1;
-            
             request.AddHeader("Accept", "application/json");
-            request.AddHeader("Authorization", "68b5274962da138495d277b673bfa6");
+            request.AddHeader("Authorization", "68b5274962da556a4ac7da138495d277b673bfa6");
 
             RestResponse response = client.Execute(request);
             ValidationRoot Validation = JsonConvert.DeserializeObject<ValidationRoot>(response.Content);
@@ -229,9 +256,10 @@ namespace TestEmailEngineValidator
 
             using (IDbConnection batches = new SqlConnection(connectionString))
             {
+                //batches.Open();
                 try
                 {
-                    batches.ExecuteSql("EXEC EmailValidation_SaveV2 @address, @isDisposableAddress, @isRoleAddress, @reason, @result, @DeliveryConfidence, @did_you_mean",
+                    await batches.ExecuteAsync("EmailValidation_SaveV2 ",
                         new
                         {
                             address = email.ToLower(),
@@ -241,63 +269,20 @@ namespace TestEmailEngineValidator
                             result = Validation.results.result ?? "",
                             DeliveryConfidence = Validation.results.delivery_confidence,
                             did_you_mean = Validation.results.did_you_mean ?? ""
-                        }, commandTimeout: 180);
+                        },
+                        commandType: CommandType.StoredProcedure,
+                        commandTimeout: 180);
                 }
                 catch (Exception e)
                 {
                     Console.WriteLine("PowerMTA - " + e.Message + " - " + email.ToLower());
                 }
+                //batches.Close();
             }
             return 1;
         }
 
-        static string ValidateWithMailgun(string email)
-        {
-            //need to test 
-            var clientOptions = new RestClientOptions()
-            {
-                Authenticator = new HttpBasicAuthenticator("api", "dec256ffd0a59edf3233d6336356995a-9ce9335e-81a9150d"),
-                BaseUrl = new Uri("https://api.mailgun.net/v4")
-            };
-            RestClient client = new RestClient(clientOptions);
-            RestRequest request = new RestRequest();
-            string result = "";
-            request.Resource = "/address/validate";
-            request.AddParameter("address", email.ToLower());
-            RestResponse respVal = client.Execute(request);
-            if (respVal.StatusCode.ToString() == "OK")
-            {
-                string resultsVal = respVal.Content.ToString();
-                dynamic ResultsValOB = JsonConvert.DeserializeObject(resultsVal);
-                if (ResultsValOB.reason.Type.ToString() == "Array") ResultsValOB.reason = String.Join(", ", ResultsValOB.reason);
-                resultsVal = resultsVal.Replace("[]", "\"\"");
-                result = ResultsValOB.result.ToString();
-                if (ResultsValOB.reason.ToString() == "mailbox_is_role_address") result = "undeliverable";
-                if (ResultsValOB.reason.ToString().Length > 3 && ResultsValOB.reason.ToString().Substring(0, 4).ToLower() == "smtp") result = "undeliverable";
-                string connectionString = ConfigurationManager.ConnectionStrings["DataCenterEmailEngine"].ConnectionString;
-
-                using (IDbConnection EmailValidation = new SqlConnection(connectionString))
-                {
-                    EmailValidation.ExecuteSql(";EXEC EmailValidation_Save @address, @isDisposableAddress, @isRoleAddress, @reason, @result, @risk",
-                        new
-                        {
-                            address = ResultsValOB.address.ToString(),
-                            isDisposableAddress = ResultsValOB.is_disposable_address.ToString(),
-                            isRoleAddress = ResultsValOB.is_role_address.ToString(),
-                            reason = ResultsValOB.reason.ToString(),
-                            result = ResultsValOB.result.ToString(),
-                            risk = ResultsValOB.risk.ToString()
-                        });
-                }
-            }
-            else
-            {
-                Console.WriteLine("Mailgun - " + respVal.ErrorMessage + " - " + respVal.ResponseStatus);
-            }
-            return result;
-        }
-
-        static void ValidateWithEASend(string email)
+        static async Task ValidateWithEASend(string email)
         {
             string connectionString = ConfigurationManager.ConnectionStrings["DataCenterEmailEngine"].ConnectionString;
             try
@@ -321,8 +306,8 @@ namespace TestEmailEngineValidator
                 {
                     using (IDbConnection EmailValidation = new SqlConnection(connectionString))
                     {
-                        
-                        EmailValidation.ExecuteSql("EXEC EmailValidation_SaveV2 ",
+
+                        await EmailValidation.ExecuteAsync("EmailValidation_SaveV2 ",
                            new
                            {
                                address = email.ToLower(),
@@ -333,6 +318,7 @@ namespace TestEmailEngineValidator
                                DeliveryConfidence = 0,
                                did_you_mean = ""
                            },
+                           commandType: CommandType.StoredProcedure,
                            commandTimeout: 180
                        );
                     }
@@ -344,7 +330,7 @@ namespace TestEmailEngineValidator
             }
         }
 
-        static void ValidateWithEASendPowerMTA(string email)
+        static async Task ValidateWithEASendPowerMTA(string email)
         {
             string connectionString = ConfigurationManager.ConnectionStrings["DataCenterEmailEngine"].ConnectionString;
             try
@@ -369,18 +355,19 @@ namespace TestEmailEngineValidator
                 {
                     using (IDbConnection EmailValidation = new SqlConnection(connectionString))
                     {
-                        EmailValidation.ExecuteSql("EmailValidation_SaveV2 @address, @isDisposableAddress, @isRoleAddress, @reason, @result, @DeliveryConfidence, @did_you_mean",
-                        new
-                        {
-                            address = email.ToLower(),
-                            isDisposableAddress = "False",
-                            isRoleAddress = "False",
-                            reason = vep.Message ?? "",
-                            result = "undeliverable",
-                            DeliveryConfidence = 0,
-                            did_you_mean = ""
-                        },
-                        commandTimeout: 180);
+                        await EmailValidation.ExecuteAsync("EmailValidation_SaveV2",
+                            new
+                            {
+                                address = email.ToLower(),
+                                isDisposableAddress = "False",
+                                isRoleAddress = "False",
+                                reason = vep.Message ?? "",
+                                result = "undeliverable",
+                                DeliveryConfidence = 0,
+                                did_you_mean = ""
+                            },
+                            commandType: CommandType.StoredProcedure,
+                            commandTimeout: 180);
                     }
                         
                  
