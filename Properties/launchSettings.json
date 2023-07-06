@@ -1,7 +1,8 @@
 {
   "profiles": {
     "TestEmailEngineValidator": {
-      "commandName": "Project"
+      "commandName": "Project",
+      "commandLineArgs": "1"
     }
   }
 }
