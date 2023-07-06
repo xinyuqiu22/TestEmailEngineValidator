@@ -24,7 +24,8 @@ namespace TestEmailEngineValidator
             if (args.Length > 0) int.TryParse(args[0], out ValidationSource_ID);
             if (args.Length > 1 && (ValidationSource_ID == 0 || ValidationSource_ID == 3 || ValidationSource_ID == 4)) DateTime.TryParse(args[1], out DropDate);
             if (args.Length > 1 && (ValidationSource_ID == 2)) int.TryParse(args[1], out BatchID);
-            
+            //Console.WriteLine(ValidationSource_ID);
+            //Console.WriteLine(BatchID);
             switch (ValidationSource_ID)
             {
                 case 0:
@@ -62,7 +63,8 @@ namespace TestEmailEngineValidator
                 using (var cleanup = new SqlConnection(connectionString))
                 {
                    
-                    cleanup.ExecuteSql("EXEC EmailValidationCleanUp_GetV2");
+                    cleanup.Execute("EmailValidationCleanUp_GetV2", 
+                        commandType: CommandType.StoredProcedure);
                 }
             }
         }
@@ -196,8 +198,8 @@ namespace TestEmailEngineValidator
                     {
                         semaphore.Release();
                     }
+                    Console.WriteLine(email.EmailAddress);
                 });
-                Console.WriteLine("done");
 
                 // Wait all tasks to complete
                 await Task.WhenAll(tasks);
@@ -256,7 +258,6 @@ namespace TestEmailEngineValidator
 
             using (IDbConnection batches = new SqlConnection(connectionString))
             {
-                //batches.Open();
                 try
                 {
                     await batches.ExecuteAsync("EmailValidation_SaveV2 ",
@@ -277,7 +278,6 @@ namespace TestEmailEngineValidator
                 {
                     Console.WriteLine("PowerMTA - " + e.Message + " - " + email.ToLower());
                 }
-                //batches.Close();
             }
             return 1;
         }
@@ -341,7 +341,7 @@ namespace TestEmailEngineValidator
                 oMail.From = "support@tealeades.com";
                 oMail.To = email.ToLower();
                 oSmtp.TestRecipients(vServer, oMail);
-                ValidateWithPowerMTA(email);
+                await ValidateWithPowerMTA(email);
             }
             catch (Exception vep)
             {
@@ -369,12 +369,10 @@ namespace TestEmailEngineValidator
                             commandType: CommandType.StoredProcedure,
                             commandTimeout: 180);
                     }
-                        
-                 
                 }
                 else
                 {
-                    ValidateWithPowerMTA(email);
+                    await ValidateWithPowerMTA(email);
                     Console.WriteLine("EASend - " + vep.Message + " - " + email.ToLower());
                 }
             }
