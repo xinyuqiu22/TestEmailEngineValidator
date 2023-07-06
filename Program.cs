@@ -77,16 +77,14 @@ namespace TestEmailEngineValidator
             {
                 IEnumerable<int> Batches = connection.Query<int>("EmailBatches_GetForValidation",
                     new { DropDate = DropDate, Realtime = Realtime },
-                    commandType: CommandType.StoredProcedure).ToList();
 
                 foreach (int batch in Batches)
                 {
                     connection.Execute("EmailBatchValidationStart_Save", 
-                        new { EmailBatch_ID = batch },
-                        commandType: CommandType.StoredProcedure);
+                        new { EmailBatch_ID = batch });
 
                     IEnumerable<Emails> ValEmails = connection.Query<Emails>("EmailValidation_GetByBatch",
-                        new { EmailBatch_ID = batch },
+                        new { EmailBatch_ID = batch },commandType: CommandType.StoredProcedure);
                         commandType: CommandType.StoredProcedure);
 
                     Parallel.ForEach(ValEmails, async email =>
@@ -110,8 +108,7 @@ namespace TestEmailEngineValidator
                         }
                     }
 
-                    connection.Execute("EmailBatchValidationFinished_Save", new { EmailBatch_ID = batch },
-                        commandType: CommandType.StoredProcedure);
+                    connection.Execute("EmailBatchValidationFinished_Save", new { EmailBatch_ID = batch });
                 }
             }
         }
@@ -122,7 +119,7 @@ namespace TestEmailEngineValidator
 
             using (var batches = new SqlConnection(connectionString))
             {
-                IEnumerable<Emails> ValEmails = await batches.QueryAsync<Emails>("EmailValidationPending_GetV2",
+                IEnumerable<Emails> ValEmails = await batches.QueryAsync<Emails>("EmailValidationPending_GetV2", commandType: CommandType.StoredProcedure);
                     commandType: CommandType.StoredProcedure);
 
                 Parallel.ForEach(ValEmails, async email =>
@@ -140,6 +137,7 @@ namespace TestEmailEngineValidator
 
                 ValEmails = await batches.QueryAsync<Emails>("EmailValidationPending_GetV2",
                     commandType: CommandType.StoredProcedure);
+
                 foreach (Emails email in ValEmails)
                 {
                     if (new[] { 1, 3, 4, 5, 8, 9 }.Contains(email.EmailServiceProvider_ID))
@@ -162,6 +160,7 @@ namespace TestEmailEngineValidator
                 var ValBatches = await batches.QueryAsync<WeeklyBatchModel>("EmailValidationNextWeek_GetV2",
                     new { Date = DropDate },
                     commandType: CommandType.StoredProcedure);
+                );
 
                 var tasks = ValBatches.Select(async email =>
                 {
@@ -182,6 +181,7 @@ namespace TestEmailEngineValidator
             {
                 IEnumerable<Emails> ValEmails = await batches.QueryAsync<Emails>("EmailValidationPending_GetPMTAOnly",
                     commandType: CommandType.StoredProcedure);
+                );
 
                 // Using a semaphore to limit concurrent tasks
                 SemaphoreSlim semaphore = new SemaphoreSlim(20);
@@ -228,8 +228,7 @@ namespace TestEmailEngineValidator
                 await Task.WhenAll(tasks);
 
                 await batch.ExecuteAsync("EmailBatchValidationFinished_Save", 
-                    new { EmailBatch_ID = BatchID }, 
-                    commandType: CommandType.StoredProcedure);
+                    new { EmailBatch_ID = BatchID });
 
                 //batch.Close();
             }
@@ -318,7 +317,6 @@ namespace TestEmailEngineValidator
                                DeliveryConfidence = 0,
                                did_you_mean = ""
                            },
-                           commandType: CommandType.StoredProcedure,
                            commandTimeout: 180
                        );
                     }
@@ -366,7 +364,6 @@ namespace TestEmailEngineValidator
                                 DeliveryConfidence = 0,
                                 did_you_mean = ""
                             },
-                            commandType: CommandType.StoredProcedure,
                             commandTimeout: 180);
                     }
                 }
